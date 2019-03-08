@@ -31,7 +31,7 @@
 
 int main(int argc, char* argv[])
 {
-    struct arg_file *file    = arg_file0("f", "file", "<binary path>", "give binary path");
+    struct arg_file *file    = arg_filen("f", "file", "<binary path>", 1, 100, "give binary path");
     struct arg_int  *display = arg_int0("i", "info", "<1,2,3>", "display information about the binary header");
     struct arg_int  *rop     = arg_int0("r", "rop", "<positive int>", "find useful gadget for your future exploits, arg is the gadget maximum size in instructions");
     struct arg_str  *raw     = arg_str0(NULL, "raw", "<archi>", "find gadgets in a raw file, 'archi' must be in the following list: x86, x64");
@@ -82,7 +82,6 @@ int main(int argc, char* argv[])
 
         if(file->count > 0)
         {
-            std::string program_path(file->filename[0]);
             CPU::E_CPU arch(CPU::CPU_UNKNOWN);
 
             if(raw->count > 0)
@@ -95,11 +94,20 @@ int main(int argc, char* argv[])
                     arch = CPU::CPU_x64;
                 else
                     RAISE_EXCEPTION("You must use an architecture supported, read the help");
-                
+
             }
-            
-            Program p(program_path, arch);
-            
+
+            if (file->count > 1 && unique->count == 0) {
+                RAISE_EXCEPTION("You must pass --unique when dealing with multiple files");
+            }
+
+            std::vector<Program*> programs;
+            for (int i = 0; i < file->count; ++i) {
+                std::string program_path(file->filename[i]);
+                programs.emplace_back(new Program(program_path, arch));
+            }
+            Program& p = *programs[0];
+
             if(display->count > 0)
             {
                 if(display->ival[0] < VERBOSE_LEVEL_1 || display->ival[0] > VERBOSE_LEVEL_3)
@@ -131,11 +139,27 @@ int main(int argc, char* argv[])
                     RAISE_EXCEPTION("You specified a maximum number of instruction too important for the --rop option");
 
                 std::cout << std::endl << "Wait a few seconds, rp++ is looking for gadgets.." << std::endl;
-                std::multiset<Gadget*, Gadget::Sort> all_gadgets = p.find_gadgets(rop->ival[0], disass_engine_display_option);
-                std::cout << "A total of " << all_gadgets.size() << " gadgets found." << std::endl;
                 if(unique->count > 0)
                 {
-                    std::map<std::string, Gadget*> unique_gadgets = only_unique_gadgets(all_gadgets);
+                    std::map<std::string, Gadget*> unique_gadgets;
+                    for (size_t i = 0; i < programs.size(); ++i) {
+                        std::multiset<Gadget*, Gadget::Sort> all =
+                            std::move(programs[i]->find_gadgets(rop->ival[0], disass_engine_display_option));
+                        std::map<std::string, Gadget*> new_gadgets =
+                            std::move(only_unique_gadgets(all));
+                        if (i > 0) {
+                            std::map<std::string, Gadget*> intersect;
+                            for (auto it : new_gadgets) {
+                                auto old = unique_gadgets.find(it.first);
+                                if (old != unique_gadgets.end()) {
+                                    intersect.insert(*old);
+                                }
+                            }
+                            unique_gadgets = std::move(intersect);
+                        } else {
+                            unique_gadgets = std::move(new_gadgets);
+                        }
+                    }
 
                     std::cout << "You decided to keep only the unique ones, " << unique_gadgets.size() << " unique gadgets found." << std::endl;
 
@@ -147,11 +171,11 @@ int main(int argc, char* argv[])
                         /* Avoid mem leaks */
                         delete it->second;
                     }
-
-                    unique_gadgets.clear();
                 }
                 else
                 {
+                    std::multiset<Gadget*, Gadget::Sort> all_gadgets = p.find_gadgets(rop->ival[0], disass_engine_display_option);
+                    std::cout << "A total of " << all_gadgets.size() << " gadgets found." << std::endl;
                     for(std::multiset<Gadget*, Gadget::Sort>::iterator it = all_gadgets.begin(); it != all_gadgets.end(); ++it)
                     {
                         display_gadget_lf((*it)->get_first_absolute_address(), *it);

@@ -258,6 +258,11 @@ std::multiset<Gadget*> BeaRopGadgetFinder::find_rop_gadgets(const unsigned char*
 
     for(unsigned long long offset = 0; offset < size; ++offset)
     {
+        if (offset > 0 && offset % 0x800000 == 0) {
+            fprintf(stderr, "  Progress: %.3f%%\n", 100.*offset/size);
+            fflush(stderr);
+        }
+
         dis.EIP = (UIntPtr)(data + offset);
         dis.VirtualAddr = SafeAddU64(vaddr, offset);
         dis.SecurityBlock = (UInt32)(size - offset + 1);

@@ -1,6 +1,6 @@
-buildx86/
-buildx64
+/build*
 doc/
 bin/Release/
 standalone-binaries-*/
 rop_mosaic.png
+/bin/rp-*
